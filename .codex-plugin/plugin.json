@@ -1,0 +1,31 @@
+{
+  "name": "youtube-research",
+  "version": "0.1.0",
+  "description": "Keyless YouTube research for agents: multi-language search with transcript highlights, transcript ranges, real video frames, chapters, comments and channel outliers, plus a research orchestration skill.",
+  "author": {
+    "name": "jindratilk",
+    "url": "https://github.com/jindratilk"
+  },
+  "homepage": "https://youtube-research-mcp.vercel.app/",
+  "repository": "https://github.com/jindratilk/youtube-research-mcp",
+  "license": "MIT",
+  "keywords": ["youtube", "mcp", "transcript", "research", "hooks", "video", "frames"],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "YouTube Research",
+    "shortDescription": "Let your agent research YouTube: search, transcripts, frames, outliers. No API key.",
+    "longDescription": "Search YouTube in several languages in one call and get transcript highlights with timestamped links, read only the slice of a video you need (time range, chapter or matching passages), see real video frames, find a channel's breakout videos, and follow a research skill that plans queries, fans out to subagents and cites every claim. No API key or cookies.",
+    "developerName": "jindratilk",
+    "category": "Research",
+    "capabilities": ["Read"],
+    "websiteURL": "https://youtube-research-mcp.vercel.app/",
+    "defaultPrompt": [
+      "List 10 hooks from YouTube videos about AI productivity, in English and Czech, with hook type and timestamped links."
+    ],
+    "brandColor": "#FF5A36",
+    "composerIcon": "./.codex-plugin/icon.svg",
+    "logo": "./.codex-plugin/logo.png",
+    "screenshots": []
+  }
+}

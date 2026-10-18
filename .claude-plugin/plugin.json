@@ -1,0 +1,27 @@
+{
+  "name": "youtube-research",
+  "description": "Keyless YouTube research for agents: multi-language search with transcript highlights, batch transcript ranges (hooks, quotes), chapters, comments and channel outliers, plus a research orchestration skill.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "youtube",
+    "transcript",
+    "research",
+    "hooks"
+  ],
+  "mcpServers": {
+    "youtube": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/index.js"
+      ]
+    }
+  },
+  "author": {
+    "name": "jindratilk",
+    "url": "https://github.com/jindratilk"
+  },
+  "homepage": "https://youtube-research-mcp.vercel.app/",
+  "repository": "https://github.com/jindratilk/youtube-research-mcp"
+}

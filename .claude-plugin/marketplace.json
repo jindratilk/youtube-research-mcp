@@ -1,0 +1,32 @@
+{
+  "name": "youtube-research",
+  "owner": {
+    "name": "jindratilk",
+    "url": "https://github.com/jindratilk"
+  },
+  "metadata": {
+    "description": "Keyless YouTube research MCP server and skill.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "youtube-research",
+      "source": "./",
+      "description": "Keyless YouTube research for agents: search with transcript highlights, transcript ranges, chapters, comments, channel outliers, and a research skill.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "productivity",
+      "keywords": [
+        "mcp",
+        "youtube",
+        "transcript",
+        "research"
+      ],
+      "author": {
+        "name": "jindratilk"
+      },
+      "homepage": "https://youtube-research-mcp.vercel.app/",
+      "repository": "https://github.com/jindratilk/youtube-research-mcp"
+    }
+  ]
+}

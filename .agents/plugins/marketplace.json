@@ -1,0 +1,20 @@
+{
+  "name": "youtube-research",
+  "interface": {
+    "displayName": "YouTube Research"
+  },
+  "plugins": [
+    {
+      "name": "youtube-research",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Research"
+    }
+  ]
+}
