@@ -248,6 +248,8 @@ References: [searching](skills/youtube-research/references/searching.md) · [hoo
 
 **Does it work for non-English content?** Yes: per-query language and region, original-language transcripts by default, and accent-aware highlights.
 
+**Researching Instagram Reels too?** See the sibling project [Reels Research MCP](https://github.com/jindratilk/reels-research-mcp).
+
 **Is it affiliated with YouTube or Google?** No. It is an independent open-source project. Use it in line with YouTube's terms and respect creators' rights.
 
 ## Development

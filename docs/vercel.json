@@ -1,0 +1,6 @@
+{
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+    { "source": "/(og.png|logo.svg|favicon.svg|favicon.ico|icon-512.png|apple-touch-icon.png)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }] }
+  ]
+}
