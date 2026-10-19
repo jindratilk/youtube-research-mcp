@@ -768,7 +768,7 @@ footer a { text-decoration: underline; text-underline-offset: 3px; }
         <article class="tool-card lift">
           <h3>youtube_fetch</h3>
           <p>Batch-read up to 25 videos: exactly the slice you need, plus real frames.</p>
-          <ul><li>Transcript by range, chapter or query passages</li><li>Real video frames at any timestamp</li><li>Exact publish date, views, likes, tags, description</li><li>Chapters, top comments, thumbnail</li></ul>
+          <ul><li>Transcript by range, chapter or query passages</li><li>Real video frames at any timestamp</li><li>Exact publish date, views, likes, comment count, tags</li><li>Search, filter and sort comments, with replies</li><li>Chapters and thumbnail</li></ul>
 <pre>{ <span class="k">"videos"</span>: [<span class="s">"TL8V41Ea6oM"</span>, <span class="s">"htZRCE2GgIs"</span>],
   <span class="k">"parts"</span>: [<span class="s">"transcript"</span>, <span class="s">"frames"</span>],
   <span class="k">"start"</span>: 0, <span class="k">"end"</span>: 30, <span class="k">"frames"</span>: 4 }</pre>
@@ -830,8 +830,8 @@ footer a { text-decoration: underline; text-underline-offset: 3px; }
         <article class="case lift">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
           <h3>Audience questions</h3>
-          <p>Top comments reveal objections, confusions and the timestamps viewers found most useful.</p>
-          <blockquote>“What do viewers keep asking under the top Claude Code tutorials?”</blockquote>
+          <p>Search the comments for a topic, filter by likes, sort by most liked and pull the replies, with a count of how many were scanned.</p>
+          <blockquote>“Search the comments of these 5 Claude Code tutorials for questions about pricing, most liked first.”</blockquote>
         </article>
       </div>
     </div>
@@ -908,7 +908,7 @@ footer a { text-decoration: underline; text-underline-offset: 3px; }
         <div class="limit lift"><h3><i></i>Transcripts are rate-limited</h3><p>YouTube throttles caption downloads per IP. A burst of ~100 in a few minutes triggers a pause. The server stops, says how long to wait and keeps everything else working. For big sweeps, set <code>YT_PROXY</code>.</p></div>
         <div class="limit lift"><h3><i></i>Search dates are approximate</h3><p>Search results carry “3 weeks ago”, so date filters are ±1 unit. <code>youtube_fetch</code> returns the exact publish date.</p></div>
         <div class="limit lift"><h3><i></i>No captions, no transcript</h3><p>Videos without manual or automatic captions have no transcript. There is no speech-to-text in the server; frames still work.</p></div>
-        <div class="limit lift"><h3><i></i>Top comments only</h3><p>YouTube no longer offers anonymous clients the “newest first” sort, so comments are the top ones.</p></div>
+        <div class="limit lift"><h3><i></i>Comment search covers the top comments</h3><p>You can search, filter and sort up to 1,000 top comments per video, with replies. YouTube no longer offers anonymous clients the “newest first” sort, so it is not every comment.</p></div>
       </div>
     </div>
   </section>

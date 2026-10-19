@@ -55977,32 +55977,79 @@ function chaptersFromDescription(desc) {
   }
   return out.length >= 2 && out[0].start === 0 ? out : [];
 }
+function toComment(c, extra = {}) {
+  const props = c.properties ?? {};
+  return {
+    id: props.commentId,
+    author: c.author?.displayName ?? "",
+    text: props.content?.content ?? "",
+    likes: parseCount(c.toolbar?.likeCountNotliked),
+    replies: parseCount(c.toolbar?.replyCount),
+    publishedText: props.publishedTime,
+    isPinned: !!extra.pinned,
+    isCreator: !!c.author?.isCreator,
+    repliesToken: extra.repliesToken
+  };
+}
 async function getComments(token, opts) {
   const out = [];
+  const seen = /* @__PURE__ */ new Set();
   let j = await innertube("next", { continuation: token });
-  for (let page = 0; page < 20 && out.length < opts.limit; page++) {
-    const payloads = findAll(j, "commentEntityPayload");
-    if (!payloads.length) break;
-    const pinnedIds = new Set(
-      findAll(j, "commentViewModel").filter((c) => c.pinnedText).map((c) => c.commentId)
-    );
-    for (const c of payloads) {
-      const props = c.properties ?? {};
-      out.push({
-        author: c.author?.displayName ?? "",
-        text: props.content?.content ?? "",
-        likes: parseCount(c.toolbar?.likeCountNotliked),
-        replies: parseCount(c.toolbar?.replyCount),
-        publishedText: props.publishedTime,
-        isPinned: pinnedIds.has(props.commentId),
-        isCreator: !!c.author?.isCreator
-      });
+  let exhausted = false;
+  for (let page = 0; page < 60 && out.length < opts.scan; page++) {
+    const payloads = /* @__PURE__ */ new Map();
+    for (const c of findAll(j, "commentEntityPayload")) if (c.properties?.commentId) payloads.set(c.properties.commentId, c);
+    const threads = findAll(j, "commentThreadRenderer");
+    let added = 0;
+    for (const t of threads) {
+      const vm = t.commentViewModel?.commentViewModel ?? t.commentViewModel;
+      const id = vm?.commentId;
+      const payload = id ? payloads.get(id) : void 0;
+      if (!payload || seen.has(id)) continue;
+      seen.add(id);
+      out.push(toComment(payload, { pinned: !!vm?.pinnedText, repliesToken: findFirst(t.replies ?? {}, "continuationCommand")?.token }));
+      added++;
     }
-    const next = findAll(j, "continuationCommand").at(-1)?.token;
-    if (!next || out.length >= opts.limit) break;
+    if (!threads.length) {
+      for (const [id, payload] of payloads) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(toComment(payload));
+        added++;
+      }
+    }
+    if (!added) {
+      exhausted = true;
+      break;
+    }
+    const next = findAll(j, "continuationItemRenderer").map((c) => findFirst(c, "continuationCommand")?.token).filter(Boolean).at(-1);
+    if (!next) {
+      exhausted = true;
+      break;
+    }
+    if (out.length >= opts.scan) break;
     j = await innertube("next", { continuation: next });
   }
-  return out.slice(0, opts.limit);
+  return { comments: out.slice(0, opts.scan), exhausted };
+}
+async function getReplies(token, limit) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  let j = await innertube("next", { continuation: token });
+  for (let page = 0; page < 10 && out.length < limit; page++) {
+    let added = 0;
+    for (const c of findAll(j, "commentEntityPayload")) {
+      const id = c.properties?.commentId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(toComment(c));
+      added++;
+    }
+    const next = findAll(j, "continuationItemRenderer").map((c) => findFirst(c, "continuationCommand")?.token).filter(Boolean).at(-1);
+    if (!added || !next || out.length >= limit) break;
+    j = await innertube("next", { continuation: next });
+  }
+  return out.slice(0, limit);
 }
 var TAB_PARAMS = {
   videos: "EgZ2aWRlb3PyBgQKAjoA",
@@ -56183,6 +56230,14 @@ function clip(t, max) {
   if (t.length <= max) return t;
   const cut = t.slice(0, max);
   return cut.slice(0, cut.lastIndexOf(" ") > max * 0.6 ? cut.lastIndexOf(" ") : max) + "\u2026";
+}
+function textMatchScore(text2, queries, mode = "any") {
+  const terms = queryTerms(queries);
+  if (!terms.length) return 0;
+  const tokens = tokenize(text2);
+  let hit = 0;
+  for (const term of terms) if (tokens.some((tok) => termMatches(tok, term))) hit++;
+  return mode === "all" ? hit === terms.length ? hit : 0 : hit;
 }
 
 // src/schema.ts
@@ -56531,7 +56586,8 @@ Tips:
 - Hooks / intros: start=0, end=30 (plus parts ["details","transcript","thumbnail","frames"] if the visual hook matters).
 - Frames are real decoded video frames (up to 1280 px): evenly spaced over start\u2013end / the chapter / the whole video (frames=N), or at exact moments (frameAt). The first frames of a video take ~10\u201320 s (stream lookup); keep frame-heavy calls to a few videos.
 - Finding a topic inside long videos: pass query instead of reading whole transcripts.
-- Long transcript cut off? Call again with start = the second where it stopped.`;
+- Long transcript cut off? Call again with start = the second where it stopped.
+- Comments: commentsQuery searches inside the top comments (commentsScan sets how deep, up to 1000); commentsMinLikes, commentsAuthor, commentsSort:"likes" and commentsReplies refine; the head line says how many were scanned and matched.`;
 function registerFetchTool(server2) {
   server2.registerTool(
     "youtube_fetch",
@@ -56550,7 +56606,14 @@ function registerFetchTool(server2) {
         timestamps: external_exports.enum(["paragraph", "segment", "none"]).optional().describe("paragraph (default): ~30 s blocks with [m:ss]; segment: every caption line; none: plain text."),
         maxCharacters: lenientNumber().optional().describe("Transcript characters per video (default 12000, max 60000)."),
         descriptionChars: lenientNumber().optional().describe("Description characters in details (default 1500)."),
-        commentsLimit: lenientNumber().optional().describe("Top comments per video (default 20, max 200)."),
+        commentsLimit: lenientNumber().optional().describe("Comments to show per video (default 20, max 200)."),
+        commentsQuery: lenientArray(external_exports.string()).optional().describe("Only comments matching these phrases (accent-insensitive, matches word forms). Searches the scanned comments, not just the shown ones."),
+        commentsMatch: external_exports.enum(["any", "all"]).optional().describe("With commentsQuery: any term (default) or all terms."),
+        commentsMinLikes: lenientNumber().optional().describe("Only comments with at least this many likes."),
+        commentsAuthor: external_exports.string().optional().describe("Only comments whose author contains this text (e.g. a @handle)."),
+        commentsScan: lenientNumber().optional().describe("How many top comments to read before filtering (20 per request). Default: commentsLimit, or 300 when filtering; max 1000."),
+        commentsSort: external_exports.enum(["top", "likes"]).optional().describe("top (YouTube's order, default) or likes (most liked first among the scanned)."),
+        commentsReplies: lenientNumber().optional().describe("Also load up to this many replies under each shown comment (default 0, max 20)."),
         frames: lenientNumber().optional().describe("With part frames: how many frames, evenly spaced over the range (default 6, max 20 per video, 40 per call)."),
         frameAt: lenientArray(timeValue()).optional().describe("With part frames: exact moments instead of even spacing, e.g. [0, 3, '0:12']."),
         frameWidth: lenientNumber().optional().describe("Frame width in px (default 640, max 1280). Wider = readable small text, more tokens.")
@@ -56642,16 +56705,7 @@ ${chapters.map((c) => `  [${formatClock(c.start)}](${watchUrl(id, c.start)}) ${c
       problems.push("comments: turned off or unavailable for this video");
     } else {
       try {
-        const limit = Math.max(1, Math.min(200, a.commentsLimit ?? 20));
-        const comments = await getComments(watch.commentsToken, { limit });
-        out.push(
-          `Top comments (${comments.length}${watch.commentCountText ? ` of ${watch.commentCountText}` : ""}):
-` + comments.map((c) => {
-            const tags = [c.isPinned ? "pinned" : "", c.isCreator ? "creator" : ""].filter(Boolean).join(",");
-            const stats = [c.likes ? `${compactNumber(c.likes)}\u2665` : "", c.replies ? `${c.replies} replies` : "", c.publishedText ?? ""].filter(Boolean).join(" \xB7 ");
-            return `- ${c.author}${tags ? ` [${tags}]` : ""} (${stats}): ${c.text.replace(/\n+/g, " \u23CE ")}`;
-          }).join("\n")
-        );
+        out.push(await commentsSection(watch.commentsToken, watch.commentCountText, a));
       } catch (e) {
         problems.push(`comments: ${errorText(e)}`);
       }
@@ -56792,6 +56846,50 @@ async function thumbnail(id) {
   const buf = Buffer.from(await res.arrayBuffer());
   return { type: "image", data: buf.toString("base64"), mimeType: "image/jpeg" };
 }
+var MAX_SCAN = 1e3;
+function formatComment(c, indent = "") {
+  const tags = [c.isPinned ? "pinned" : "", c.isCreator ? "creator" : ""].filter(Boolean).join(",");
+  const stats = [c.likes ? `${compactNumber(c.likes)}\u2665` : "", c.replies ? `${c.replies} replies` : "", c.publishedText ?? ""].filter(Boolean).join(" \xB7 ");
+  return `${indent}- ${c.author}${tags ? ` [${tags}]` : ""} (${stats}): ${c.text.replace(/\n+/g, " \u23CE ")}`;
+}
+async function commentsSection(token, countText, a) {
+  const limit = Math.max(1, Math.min(200, Math.round(a.commentsLimit ?? 20)));
+  const filtering = !!(a.commentsQuery?.length || a.commentsMinLikes || a.commentsAuthor);
+  const scan = Math.max(limit, Math.min(MAX_SCAN, Math.round(a.commentsScan ?? (filtering ? 300 : limit))));
+  const { comments, exhausted } = await getComments(token, { scan });
+  const author = a.commentsAuthor ? fold(a.commentsAuthor.replace(/^@/, "")) : void 0;
+  const scored = comments.map((c) => ({ c, score: a.commentsQuery?.length ? textMatchScore(c.text, a.commentsQuery, a.commentsMatch ?? "any") : 1 })).filter(({ c, score }) => score > 0 && (c.likes ?? 0) >= (a.commentsMinLikes ?? 0) && (!author || fold(c.author).includes(author)));
+  if (a.commentsSort === "likes") scored.sort((x, y) => (y.c.likes ?? 0) - (x.c.likes ?? 0));
+  else if (a.commentsQuery?.length) scored.sort((x, y) => y.score - x.score || (y.c.likes ?? 0) - (x.c.likes ?? 0));
+  const shown = scored.slice(0, limit).map((x) => x.c);
+  const replyCap = Math.max(0, Math.min(20, Math.round(a.commentsReplies ?? 0)));
+  const replies = /* @__PURE__ */ new Map();
+  if (replyCap) {
+    await Promise.all(
+      shown.map(async (c) => {
+        if (!c.repliesToken || !c.id) return;
+        try {
+          replies.set(c.id, await getReplies(c.repliesToken, replyCap));
+        } catch {
+        }
+      })
+    );
+  }
+  const total = countText ? ` of ${countText}` : "";
+  const filters = [
+    a.commentsQuery?.length ? `matching ${JSON.stringify(a.commentsQuery)}${a.commentsMatch === "all" ? " (all terms)" : ""}` : "",
+    a.commentsMinLikes ? `\u2265${a.commentsMinLikes} likes` : "",
+    a.commentsAuthor ? `author ~ ${a.commentsAuthor}` : ""
+  ].filter(Boolean);
+  const head = `Comments: scanned ${comments.length}${total} top comments${exhausted ? " (all that YouTube lists)" : ""}` + (filters.length ? `; ${scored.length} ${filters.join(", ")}` : "") + `; showing ${shown.length}${a.commentsSort === "likes" ? ", most liked first" : ""}` + (scored.length > shown.length ? `. ${scored.length - shown.length} more ${filtering ? "match" : "scanned"}${limit < 200 ? ": raise commentsLimit (max 200)." : "."}` : ".") + (filtering && !exhausted && comments.length >= scan ? ` Only the top ${scan} comments were searched; raise commentsScan (max ${MAX_SCAN}) to search deeper.` : "");
+  if (!shown.length) return head;
+  const lines = [];
+  for (const c of shown) {
+    lines.push(formatComment(c));
+    for (const r of c.id && replies.get(c.id) || []) lines.push(formatComment(r, "    \u21B3 ").replace("    \u21B3 - ", "    \u21B3 "));
+  }
+  return head + "\n" + lines.join("\n");
+}
 
 // src/tools/channel.ts
 var DESCRIPTION3 = `List a channel's videos with an outlier score: how many times more views a video got than the channel's median.
@@ -56921,7 +57019,7 @@ async function runDoctor() {
 
 // src/index.ts
 if (process.argv.includes("--version")) {
-  console.log("youtube-research-mcp 0.1.0");
+  console.log("youtube-research-mcp 0.2.0");
   process.exit(0);
 }
 if (process.argv.includes("--doctor")) {
@@ -56936,7 +57034,7 @@ var ALL = {
 };
 var wanted = (process.env.YT_MCP_TOOLS ?? Object.keys(ALL).join(",")).split(",").map((s) => s.trim()).filter(Boolean);
 var server = new McpServer(
-  { name: "youtube-research", version: "0.1.0" },
+  { name: "youtube-research", version: "0.2.0" },
   {
     instructions: "Keyless YouTube research tools. Typical flow: youtube_search with several query variants (synonyms, languages) in one call \u2192 read highlights \u2192 youtube_fetch only the videos/ranges you need (start/end, chapter or query) \u2192 cite with the ?t= links. Use youtube_channel to find a creator's outlier videos. If calls fail, run youtube_doctor."
   }

@@ -1,6 +1,6 @@
 {
   "name": "youtube-research-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keyless YouTube MCP server built for research agents: multi-query search with transcript highlights, batch fetch of transcript ranges, chapters, comments and channel outliers.",
   "type": "module",
   "bin": {

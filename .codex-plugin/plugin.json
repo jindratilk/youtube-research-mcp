@@ -1,6 +1,6 @@
 {
   "name": "youtube-research",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keyless YouTube research for agents: multi-language search with transcript highlights, transcript ranges, real video frames, chapters, comments and channel outliers, plus a research orchestration skill.",
   "author": {
     "name": "jindratilk",

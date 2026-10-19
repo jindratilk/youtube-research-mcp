@@ -91,6 +91,7 @@ export interface WatchInfo {
 }
 
 export interface Comment {
+  id?: string;
   author: string;
   text: string;
   likes?: number;
@@ -98,6 +99,8 @@ export interface Comment {
   publishedText?: string;
   isPinned?: boolean;
   isCreator?: boolean;
+  /** Token that loads this comment's replies (only on comments that have some). */
+  repliesToken?: string;
 }
 
 export interface ChannelInfo {
@@ -383,35 +386,90 @@ export function chaptersFromDescription(desc: string): KeyMoment[] {
   return out.length >= 2 && out[0].start === 0 ? out : [];
 }
 
-/** Top comments. YouTube no longer exposes the "newest first" sort to anonymous clients. */
-export async function getComments(token: string, opts: { limit: number }): Promise<Comment[]> {
+function toComment(c: any, extra: { pinned?: boolean; repliesToken?: string } = {}): Comment {
+  const props = c.properties ?? {};
+  return {
+    id: props.commentId,
+    author: c.author?.displayName ?? "",
+    text: props.content?.content ?? "",
+    likes: parseCount(c.toolbar?.likeCountNotliked),
+    replies: parseCount(c.toolbar?.replyCount),
+    publishedText: props.publishedTime,
+    isPinned: !!extra.pinned,
+    isCreator: !!c.author?.isCreator,
+    repliesToken: extra.repliesToken,
+  };
+}
+
+/**
+ * Top comments, paged until `scan` comments were read (20 per request).
+ * YouTube no longer exposes the "newest first" sort to anonymous clients.
+ */
+export async function getComments(
+  token: string,
+  opts: { scan: number },
+): Promise<{ comments: Comment[]; exhausted: boolean }> {
   const out: Comment[] = [];
+  const seen = new Set<string>();
   let j = await innertube("next", { continuation: token });
-  for (let page = 0; page < 20 && out.length < opts.limit; page++) {
-    const payloads = findAll(j, "commentEntityPayload");
-    if (!payloads.length) break;
-    const pinnedIds = new Set(
-      findAll(j, "commentViewModel")
-        .filter((c: any) => c.pinnedText)
-        .map((c: any) => c.commentId),
-    );
-    for (const c of payloads) {
-      const props = c.properties ?? {};
-      out.push({
-        author: c.author?.displayName ?? "",
-        text: props.content?.content ?? "",
-        likes: parseCount(c.toolbar?.likeCountNotliked),
-        replies: parseCount(c.toolbar?.replyCount),
-        publishedText: props.publishedTime,
-        isPinned: pinnedIds.has(props.commentId),
-        isCreator: !!c.author?.isCreator,
-      });
+  let exhausted = false;
+  for (let page = 0; page < 60 && out.length < opts.scan; page++) {
+    const payloads = new Map<string, any>();
+    for (const c of findAll(j, "commentEntityPayload")) if (c.properties?.commentId) payloads.set(c.properties.commentId, c);
+    const threads = findAll(j, "commentThreadRenderer");
+    let added = 0;
+    for (const t of threads) {
+      const vm = t.commentViewModel?.commentViewModel ?? t.commentViewModel;
+      const id: string | undefined = vm?.commentId;
+      const payload = id ? payloads.get(id) : undefined;
+      if (!payload || seen.has(id!)) continue;
+      seen.add(id!);
+      out.push(toComment(payload, { pinned: !!vm?.pinnedText, repliesToken: findFirst(t.replies ?? {}, "continuationCommand")?.token }));
+      added++;
     }
-    const next = findAll(j, "continuationCommand").at(-1)?.token;
-    if (!next || out.length >= opts.limit) break;
+    if (!threads.length) {
+      // Older layout without thread wrappers: take the payloads as they come.
+      for (const [id, payload] of payloads) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(toComment(payload));
+        added++;
+      }
+    }
+    if (!added) {
+      exhausted = true;
+      break;
+    }
+    const next = findAll(j, "continuationItemRenderer").map((c: any) => findFirst(c, "continuationCommand")?.token).filter(Boolean).at(-1);
+    if (!next) {
+      exhausted = true;
+      break;
+    }
+    if (out.length >= opts.scan) break;
     j = await innertube("next", { continuation: next });
   }
-  return out.slice(0, opts.limit);
+  return { comments: out.slice(0, opts.scan), exhausted };
+}
+
+/** Replies of one comment, oldest first as YouTube lists them. */
+export async function getReplies(token: string, limit: number): Promise<Comment[]> {
+  const out: Comment[] = [];
+  const seen = new Set<string>();
+  let j = await innertube("next", { continuation: token });
+  for (let page = 0; page < 10 && out.length < limit; page++) {
+    let added = 0;
+    for (const c of findAll(j, "commentEntityPayload")) {
+      const id = c.properties?.commentId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(toComment(c));
+      added++;
+    }
+    const next = findAll(j, "continuationItemRenderer").map((c: any) => findFirst(c, "continuationCommand")?.token).filter(Boolean).at(-1);
+    if (!added || !next || out.length >= limit) break;
+    j = await innertube("next", { continuation: next });
+  }
+  return out.slice(0, limit);
 }
 
 // ---------- channels ----------

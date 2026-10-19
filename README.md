@@ -45,7 +45,7 @@ Most YouTube MCP servers expose one call per video and dump whole transcripts in
 - ✂️ **Read only what you need.** Transcripts by time range (`start: 0, end: 30` for hooks), by chapter, or only the passages matching a query. Up to 25 videos per call.
 - 🎞️ **Real video frames.** Decoded frames (up to 1280 px) evenly spaced over a range or at exact seconds. On-screen text, b-roll and screen demos become visible. ffmpeg reads only the bytes around each frame, never the whole video.
 - 📈 **Outlier scores.** A channel's videos scored against its median views, to find the breakouts. Views/day on every search result.
-- 💬 **Details, chapters, comments.** Exact publish date, likes, tags, description, chapters (or description timestamps), top comments with pinned/creator flags, thumbnails.
+- 💬 **Details, chapters and searchable comments.** Exact publish date, likes, comment count, tags, description, chapters (or description timestamps), thumbnails. Comments can be searched, filtered by likes or author, sorted by likes and expanded with replies; every answer says how many were scanned and matched.
 - 🧾 **Nothing disappears silently.** Every response ends with a coverage footer (raw → unique → after filters, what was dropped and why), and per-video failures carry a reason code.
 - 🛡️ **Careful with YouTube's limits.** API calls and caption downloads have separate queues. A caption rate limit triggers a cooldown instead of retries, and the tools say exactly how long to wait while everything else keeps working. Optional `YT_PROXY` for big sweeps.
 - 🧠 **A research skill.** It plans queries in every relevant language, fans out to parallel subagents, then merges, spot-checks quotes and reports coverage.
@@ -180,7 +180,12 @@ If a user asked you to install YouTube Research MCP, follow these steps exactly.
 | `timestamps` | `paragraph` (~30 s blocks, default) · `segment` · `none` |
 | `maxCharacters` | Transcript budget per video (default 12000); truncation says where to resume |
 | `frames` / `frameAt` / `frameWidth` | N evenly spaced frames, or exact seconds; width up to 1280 px |
-| `commentsLimit` | Top comments per video (default 20) |
+| `commentsLimit` | Comments to show per video (default 20, max 200) |
+| `commentsQuery` / `commentsMatch` | Search inside the top comments (accent-insensitive, matches word forms); `any` (default) or `all` terms |
+| `commentsMinLikes` / `commentsAuthor` | Keep only comments with enough likes, or from an author |
+| `commentsScan` | How many top comments to read before filtering (default 300 when filtering, max 1000) |
+| `commentsSort` | `top` (YouTube order) or `likes` (most liked first among the scanned) |
+| `commentsReplies` | Also load up to N replies under each shown comment (max 20) |
 
 ### `youtube_channel`
 
@@ -234,7 +239,7 @@ References: [searching](skills/youtube-research/references/searching.md) · [hoo
 - **Transcripts are rate-limited per IP.** In testing, a burst of roughly 80–100 transcripts within a few minutes triggered HTTP 429 on captions (yt-dlp too, since it uses the same endpoint), while search and metadata kept working. Innertube's `get_transcript` endpoint is closed to anonymous clients, so there is no second keyless source. The server pauses and tells the agent when to retry; for sweeps of hundreds of videos use `YT_PROXY`.
 - **Search dates are approximate** ("3 weeks ago" → ±1 unit). `youtube_fetch` returns the exact publish date.
 - **No server-side date sort:** YouTube dropped it; `sort: "date"` re-sorts fetched results, so pair it with `uploaded`.
-- **Top comments only:** the "newest first" sort is not offered to anonymous clients.
+- **Comments are the top ones:** YouTube does not offer anonymous clients the "newest first" sort, and comment search covers the scanned top comments (up to 1000), not every comment on the video.
 - **No captions, no transcript:** there is no speech-to-text in the server. Frames still work.
 - **Frames take ~10–20 s for the first frames of a video** (stream lookup), then ~2 s each; max 20 per video and 40 per call.
 

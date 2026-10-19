@@ -4,6 +4,8 @@ import {
   captionCooldownSeconds,
   chaptersFromDescription,
   getComments,
+  getReplies,
+  type Comment,
   getPlayer,
   getWatch,
   transcriptFor,
@@ -12,7 +14,7 @@ import {
   type Segment,
   type WatchInfo,
 } from "../youtube.js";
-import { findHighlights, fold } from "../highlights.js";
+import { findHighlights, fold, textMatchScore } from "../highlights.js";
 import { grabFrames } from "../frames.js";
 import { limitedFetch, YouTubeError } from "../innertube.js";
 import { compactNumber, formatClock, isoDay, parseUrlStart, parseVideoId, watchUrl } from "../parse.js";
@@ -31,7 +33,8 @@ Tips:
 - Hooks / intros: start=0, end=30 (plus parts ["details","transcript","thumbnail","frames"] if the visual hook matters).
 - Frames are real decoded video frames (up to 1280 px): evenly spaced over start–end / the chapter / the whole video (frames=N), or at exact moments (frameAt). The first frames of a video take ~10–20 s (stream lookup); keep frame-heavy calls to a few videos.
 - Finding a topic inside long videos: pass query instead of reading whole transcripts.
-- Long transcript cut off? Call again with start = the second where it stopped.`;
+- Long transcript cut off? Call again with start = the second where it stopped.
+- Comments: commentsQuery searches inside the top comments (commentsScan sets how deep, up to 1000); commentsMinLikes, commentsAuthor, commentsSort:"likes" and commentsReplies refine; the head line says how many were scanned and matched.`;
 
 export function registerFetchTool(server: McpServer): void {
   server.registerTool(
@@ -64,7 +67,18 @@ export function registerFetchTool(server: McpServer): void {
           .optional()
           .describe("Transcript characters per video (default 12000, max 60000)."),
         descriptionChars: lenientNumber().optional().describe("Description characters in details (default 1500)."),
-        commentsLimit: lenientNumber().optional().describe("Top comments per video (default 20, max 200)."),
+        commentsLimit: lenientNumber().optional().describe("Comments to show per video (default 20, max 200)."),
+        commentsQuery: lenientArray(z.string())
+          .optional()
+          .describe("Only comments matching these phrases (accent-insensitive, matches word forms). Searches the scanned comments, not just the shown ones."),
+        commentsMatch: z.enum(["any", "all"]).optional().describe("With commentsQuery: any term (default) or all terms."),
+        commentsMinLikes: lenientNumber().optional().describe("Only comments with at least this many likes."),
+        commentsAuthor: z.string().optional().describe("Only comments whose author contains this text (e.g. a @handle)."),
+        commentsScan: lenientNumber()
+          .optional()
+          .describe("How many top comments to read before filtering (20 per request). Default: commentsLimit, or 300 when filtering; max 1000."),
+        commentsSort: z.enum(["top", "likes"]).optional().describe("top (YouTube's order, default) or likes (most liked first among the scanned)."),
+        commentsReplies: lenientNumber().optional().describe("Also load up to this many replies under each shown comment (default 0, max 20)."),
         frames: lenientNumber()
           .optional()
           .describe("With part frames: how many frames, evenly spaced over the range (default 6, max 20 per video, 40 per call)."),
@@ -98,6 +112,13 @@ type Args = {
   maxCharacters?: number;
   descriptionChars?: number;
   commentsLimit?: number;
+  commentsQuery?: string[];
+  commentsMatch?: "any" | "all";
+  commentsMinLikes?: number;
+  commentsAuthor?: string;
+  commentsScan?: number;
+  commentsSort?: "top" | "likes";
+  commentsReplies?: number;
   frames?: number;
   frameAt?: number[];
   frameWidth?: number;
@@ -201,20 +222,7 @@ async function fetchOne(
       problems.push("comments: turned off or unavailable for this video");
     } else {
       try {
-        const limit = Math.max(1, Math.min(200, a.commentsLimit ?? 20));
-        const comments = await getComments(watch.commentsToken, { limit });
-        out.push(
-          `Top comments (${comments.length}${watch.commentCountText ? ` of ${watch.commentCountText}` : ""}):\n` +
-            comments
-              .map((c) => {
-                const tags = [c.isPinned ? "pinned" : "", c.isCreator ? "creator" : ""].filter(Boolean).join(",");
-                const stats = [c.likes ? `${compactNumber(c.likes)}♥` : "", c.replies ? `${c.replies} replies` : "", c.publishedText ?? ""]
-                  .filter(Boolean)
-                  .join(" · ");
-                return `- ${c.author}${tags ? ` [${tags}]` : ""} (${stats}): ${c.text.replace(/\n+/g, " ⏎ ")}`;
-              })
-              .join("\n"),
-        );
+        out.push(await commentsSection(watch.commentsToken, watch.commentCountText, a));
       } catch (e) {
         problems.push(`comments: ${errorText(e)}`);
       }
@@ -373,4 +381,66 @@ async function thumbnail(id: string): Promise<Content> {
   if (!res.ok) throw new Error(`thumbnail HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   return { type: "image", data: buf.toString("base64"), mimeType: "image/jpeg" };
+}
+
+const MAX_SCAN = 1000;
+
+function formatComment(c: Comment, indent = ""): string {
+  const tags = [c.isPinned ? "pinned" : "", c.isCreator ? "creator" : ""].filter(Boolean).join(",");
+  const stats = [c.likes ? `${compactNumber(c.likes)}♥` : "", c.replies ? `${c.replies} replies` : "", c.publishedText ?? ""].filter(Boolean).join(" · ");
+  return `${indent}- ${c.author}${tags ? ` [${tags}]` : ""} (${stats}): ${c.text.replace(/\n+/g, " ⏎ ")}`;
+}
+
+/** Read, filter, rank and (optionally) expand comments; always says how much was scanned. */
+async function commentsSection(token: string, countText: string | undefined, a: Args): Promise<string> {
+  const limit = Math.max(1, Math.min(200, Math.round(a.commentsLimit ?? 20)));
+  const filtering = !!(a.commentsQuery?.length || a.commentsMinLikes || a.commentsAuthor);
+  const scan = Math.max(limit, Math.min(MAX_SCAN, Math.round(a.commentsScan ?? (filtering ? 300 : limit))));
+  const { comments, exhausted } = await getComments(token, { scan });
+
+  const author = a.commentsAuthor ? fold(a.commentsAuthor.replace(/^@/, "")) : undefined;
+  const scored = comments
+    .map((c) => ({ c, score: a.commentsQuery?.length ? textMatchScore(c.text, a.commentsQuery, a.commentsMatch ?? "any") : 1 }))
+    .filter(({ c, score }) => score > 0 && (c.likes ?? 0) >= (a.commentsMinLikes ?? 0) && (!author || fold(c.author).includes(author)));
+
+  if (a.commentsSort === "likes") scored.sort((x, y) => (y.c.likes ?? 0) - (x.c.likes ?? 0));
+  else if (a.commentsQuery?.length) scored.sort((x, y) => y.score - x.score || (y.c.likes ?? 0) - (x.c.likes ?? 0));
+
+  const shown = scored.slice(0, limit).map((x) => x.c);
+  const replyCap = Math.max(0, Math.min(20, Math.round(a.commentsReplies ?? 0)));
+  const replies = new Map<string, Comment[]>();
+  if (replyCap) {
+    await Promise.all(
+      shown.map(async (c) => {
+        if (!c.repliesToken || !c.id) return;
+        try {
+          replies.set(c.id, await getReplies(c.repliesToken, replyCap));
+        } catch {
+          /* replies are best-effort; the top-level comment is still shown */
+        }
+      }),
+    );
+  }
+
+  const total = countText ? ` of ${countText}` : "";
+  const filters = [
+    a.commentsQuery?.length ? `matching ${JSON.stringify(a.commentsQuery)}${a.commentsMatch === "all" ? " (all terms)" : ""}` : "",
+    a.commentsMinLikes ? `≥${a.commentsMinLikes} likes` : "",
+    a.commentsAuthor ? `author ~ ${a.commentsAuthor}` : "",
+  ].filter(Boolean);
+  const head =
+    `Comments: scanned ${comments.length}${total} top comments${exhausted ? " (all that YouTube lists)" : ""}` +
+    (filters.length ? `; ${scored.length} ${filters.join(", ")}` : "") +
+    `; showing ${shown.length}${a.commentsSort === "likes" ? ", most liked first" : ""}` +
+    (scored.length > shown.length
+      ? `. ${scored.length - shown.length} more ${filtering ? "match" : "scanned"}${limit < 200 ? ": raise commentsLimit (max 200)." : "."}`
+      : ".") +
+    (filtering && !exhausted && comments.length >= scan ? ` Only the top ${scan} comments were searched; raise commentsScan (max ${MAX_SCAN}) to search deeper.` : "");
+  if (!shown.length) return head;
+  const lines: string[] = [];
+  for (const c of shown) {
+    lines.push(formatComment(c));
+    for (const r of (c.id && replies.get(c.id)) || []) lines.push(formatComment(r, "    ↳ ").replace("    ↳ - ", "    ↳ "));
+  }
+  return head + "\n" + lines.join("\n");
 }

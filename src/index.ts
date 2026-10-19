@@ -8,7 +8,7 @@ import { registerDoctorTool, runDoctor } from "./tools/doctor.js";
 
 // CLI helpers for humans and installing agents: `--doctor` checks YouTube access and exits.
 if (process.argv.includes("--version")) {
-  console.log("youtube-research-mcp 0.1.0");
+  console.log("youtube-research-mcp 0.2.0");
   process.exit(0);
 }
 if (process.argv.includes("--doctor")) {
@@ -30,7 +30,7 @@ const wanted = (process.env.YT_MCP_TOOLS ?? Object.keys(ALL).join(","))
   .filter(Boolean);
 
 const server = new McpServer(
-  { name: "youtube-research", version: "0.1.0" },
+  { name: "youtube-research", version: "0.2.0" },
   {
     instructions:
       "Keyless YouTube research tools. Typical flow: youtube_search with several query variants (synonyms, languages) in one call → read highlights → youtube_fetch only the videos/ranges you need (start/end, chapter or query) → cite with the ?t= links. Use youtube_channel to find a creator's outlier videos. If calls fail, run youtube_doctor.",

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { formatClock, parseAbsoluteDate, parseClock, parseCount, parseRelativeDate, parseUrlStart, parseVideoId } from "../src/parse.js";
 import { encodeSearchParams } from "../src/searchParams.js";
-import { findHighlights, queryTerms } from "../src/highlights.js";
+import { findHighlights, queryTerms, textMatchScore } from "../src/highlights.js";
 import { chaptersFromDescription, pickTrack } from "../src/youtube.js";
 import { median } from "../src/tools/channel.js";
 import { frameTimes } from "../src/tools/fetch.js";
@@ -78,4 +78,12 @@ test("frame timestamps", () => {
   assert.deepEqual(frameTimes({ frames: 2 }, { start: 0, end: Infinity }, 100), [0, 50]);
   assert.deepEqual(frameTimes({ frameAt: [5, 250, 99999] }, { start: 0, end: Infinity }, 300), [5, 250]);
   assert.deepEqual(frameTimes({ frames: 3 }, { start: 0, end: Infinity }, undefined), []);
+});
+
+test("comment matching: accents, word forms, any vs all", () => {
+  assert.equal(textMatchScore("Skvělé video, díky za tipy na produktivitu!", ["produktivita"]), 1);
+  assert.equal(textMatchScore("Great workflow, the agents saved me hours", ["agent", "hours"], "all"), 2);
+  assert.equal(textMatchScore("Great workflow", ["agent", "hours"], "all"), 0);
+  assert.equal(textMatchScore("Great workflow", ["agent", "workflow"], "any"), 1);
+  assert.equal(textMatchScore("anything", []), 0);
 });

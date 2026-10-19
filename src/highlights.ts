@@ -129,3 +129,17 @@ function clip(t: string, max: number): string {
   const cut = t.slice(0, max);
   return cut.slice(0, cut.lastIndexOf(" ") > max * 0.6 ? cut.lastIndexOf(" ") : max) + "…";
 }
+
+/**
+ * Does `text` match the query phrases? Accent-folded, prefix-stemmed like passage
+ * search. mode "any": at least one query term; "all": every term.
+ * Returns the number of distinct terms matched (0 = no match).
+ */
+export function textMatchScore(text: string, queries: string[], mode: "any" | "all" = "any"): number {
+  const terms = queryTerms(queries);
+  if (!terms.length) return 0;
+  const tokens = tokenize(text);
+  let hit = 0;
+  for (const term of terms) if (tokens.some((tok) => termMatches(tok, term))) hit++;
+  return mode === "all" ? (hit === terms.length ? hit : 0) : hit;
+}

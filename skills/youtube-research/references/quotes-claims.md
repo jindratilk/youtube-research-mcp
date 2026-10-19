@@ -31,3 +31,13 @@ Context matters: a speaker setting up a view they then reject ("people say X, bu
 ## Comments as a source
 
 `parts: ["comments"]` gives top comments: audience questions, objections, timestamps viewers found valuable. Label them clearly as viewer comments, never as the creator's view (except comments marked [creator]).
+
+Search and filter instead of reading hundreds:
+```
+youtube_fetch { "videos": ["<id>"], "parts": ["comments"],
+  "commentsQuery": ["price", "too expensive"], "commentsScan": 500,
+  "commentsMinLikes": 5, "commentsSort": "likes", "commentsReplies": 3 }
+```
+- The first line states how many comments were scanned, how many matched and whether the search was limited to the top N: repeat that scope in your write-up ("searched the top 500 of 2.1K comments").
+- Use `commentsMatch: "all"` for comments that mention several things together; `commentsAuthor: "@handle"` to find what the creator or a known commenter said.
+- Comment counts and likes come from the output; do not extrapolate from the sample to all comments.

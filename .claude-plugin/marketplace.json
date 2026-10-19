@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Keyless YouTube research MCP server and skill.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "youtube-research",
       "source": "./",
       "description": "Keyless YouTube research for agents: search with transcript highlights, transcript ranges, chapters, comments, channel outliers, and a research skill.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "license": "MIT",
       "category": "productivity",
       "keywords": [
